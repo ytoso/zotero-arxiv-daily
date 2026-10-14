@@ -7,6 +7,7 @@ import calendar
 from datetime import datetime, timezone
 import multiprocessing
 import os
+import sys
 from queue import Empty
 import re
 from tempfile import TemporaryDirectory
@@ -63,7 +64,14 @@ def _run_with_hard_timeout(
     paper_title: str,
 ) -> T | None:
     start_methods = multiprocessing.get_all_start_methods()
-    context = multiprocessing.get_context("fork" if "fork" in start_methods else start_methods[0])
+    if sys.platform == "darwin":
+        # fork() on macOS can crash the child process when Objective-C
+        # frameworks (e.g. Foundation) are initialized in the parent
+        # (objc_initializeAfterForkError), so use spawn instead.
+        method = "spawn" if "spawn" in start_methods else start_methods[0]
+    else:
+        method = "fork" if "fork" in start_methods else start_methods[0]
+    context = multiprocessing.get_context(method)
     result_queue = context.Queue()
     process = context.Process(target=_run_in_subprocess, args=(result_queue, func, args))
     process.start()
