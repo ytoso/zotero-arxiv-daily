@@ -6,8 +6,8 @@ zotero:
 email:
   sender: ${oc.env:SENDER}
   receiver: ${oc.env:RECEIVER}
-  smtp_server: smtp.qq.com
-  smtp_port: 465
+  smtp_server: smtp.gmail.com
+  smtp_port: 587
   sender_password: ${oc.env:SENDER_PASSWORD}
 
 llm:
@@ -16,7 +16,7 @@ llm:
     base_url: ${oc.env:OPENAI_API_BASE}
   api_mode: chat_completion
   generation_kwargs:
-    model: gpt-4o-mini
+    model: deepseek-flash
 
 source:
   arxiv:
