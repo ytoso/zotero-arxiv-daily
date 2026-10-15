@@ -2,7 +2,9 @@ name: Send emails daily
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 22 * * *'
+    # 16:30 UTC = 00:30 CST. Runtime ~4h40m, so the email lands ~05:00-07:00 CST,
+    # ready when checking at 08:00 CST. Minute :30 avoids top-of-hour queue delays.
+    - cron: '30 16 * * *'
 
 jobs:
   calculate-and-send:
