@@ -172,17 +172,60 @@ That's all! Now you can test the workflow by manually triggering it:
 
 Then check the log and the receiver email after it finishes.
 
-By default, the main workflow runs on 22:00 UTC everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
+By default, the main workflow runs on 01:30 UTC everyday (shortly after arXiv publishes each day's batch). You can change this time by editting the workflow config `.github/workflows/main.yml`.
 
-### Local Running
-Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:
+### Run on your own server (or locally)
+
+The same pipeline can run on your own machine/server with [uv](https://github.com/astral-sh/uv) instead of GitHub Actions. This avoids GitHub's queue delays and lets you use your own hardware (the CPU-bound embedding step benefits a lot from more cores).
+
+**1. Install uv**
 ```bash
-# set all the environment variables
-# export ZOTERO_ID=xxxx
-# ...
-cd zotero-arxiv-daily
-uv run main.py
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or on macOS: brew install uv
 ```
+
+**2. Clone and install dependencies**
+```bash
+git clone git@github.com:ytoso/zotero-arxiv-daily.git
+cd zotero-arxiv-daily
+uv sync
+```
+
+**3. Create a `.env` file** (gitignored) with your secrets:
+```bash
+ZOTERO_ID=...
+ZOTERO_KEY=...
+SENDER=...
+SENDER_PASSWORD=...
+RECEIVER=...
+OPENAI_API_KEY=...
+OPENAI_API_BASE=...
+```
+
+**4. Configure `config/custom.yaml`** — same content as the `CUSTOM_CONFIG` example above (sources, SMTP server, model). The app merges `config/base.yaml` + `config/custom.yaml`, and `${oc.env:VAR}` values are read from the environment (`.env` is loaded automatically).
+
+**5. Run once to verify**
+```bash
+uv run src/zotero_arxiv_daily/main.py
+# quick smoke test with only 10 papers:
+DEBUG=true uv run src/zotero_arxiv_daily/main.py
+```
+
+**6. Schedule it with cron**
+
+arXiv releases each day's batch at ~00:00 UTC (summer) / 01:00 UTC (winter). To email the newest papers, schedule the run shortly after release, e.g. at 01:30 UTC:
+
+```bash
+crontab -e
+```
+```cron
+# 01:30 UTC daily — adjust the paths to your machine
+30 1 * * * cd /home/user/Codes/zotero-arxiv-daily && /home/user/.local/bin/uv run src/zotero_arxiv_daily/main.py >> /home/user/Codes/zotero-arxiv-daily/cron.log 2>&1
+```
+
+> [!TIP]
+> - **Speed:** TLDR/affiliation generation is parallelized via `executor.llm_concurrency` (default `8`). Raise it (e.g. `16`) if your LLM API allows; lower it if you hit `429` rate-limit errors.
+> - **Debug:** `DEBUG=true` (or `executor.debug: true`) limits retrieval to 10 papers for quick tests.
 
 ## 🚀 Sync with the latest version
 This project is in active development. You can subscribe this repo via `Watch` so that you can be notified once we publish new release.
