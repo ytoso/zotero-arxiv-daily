@@ -1,0 +1,15 @@
+.git
+.venv
+.env
+logs/
+models/
+outputs/
+__pycache__/
+*.pyc
+.pytest_cache/
+assets/
+.github/
+tests/
+*.ipynb
+config/private.yaml
+test-compose.yml

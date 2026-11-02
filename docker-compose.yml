@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    image: zotero-arxiv-daily:latest
+    # Secrets are injected from .env (ZOTERO_ID, ZOTERO_KEY, SENDER,
+    # SENDER_PASSWORD, RECEIVER, OPENAI_API_KEY, OPENAI_API_BASE).
+    env_file:
+      - .env
+    environment:
+      - HF_HOME=/app/models
+      - TOKENIZERS_PARALLELISM=false
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+    restart: "no"

@@ -1,111 +1,79 @@
 ## 🐳 Docker Deployment
 
-For users who prefer containerized deployment, we now provide Docker deployment options. This is particularly useful for:
+You can run the pipeline in a container instead of GitHub Actions. This is the easiest way to deploy on your own server: all Python dependencies (including torch) are bundled into the image, and secrets are injected from a `.env` file.
 
-- Running the service on your own server instead of GitHub Actions
-- Better resource control (CPU/RAM allocation)
-- Easier environment management
-- Persistent logging and model caching
-- **Prerequisites**:
-  - Docker installed ([Installation Guide](https://docs.docker.com/engine/install/))
-  - Docker Compose (usually included with Docker Desktop)
-  - Configured Docker image registry mirror (for faster builds in some regions)
+### Prerequisites
 
-### Quick Start with Docker
+- Docker + Docker Compose installed
+- A `.env` file with your secrets (see the main README)
 
-1. Clone the repository:
+### 1. Build the image
+
 ```bash
-git clone https://github.com/TideDra/zotero-arxiv-daily.git
+git clone git@github.com:ytoso/zotero-arxiv-daily.git
 cd zotero-arxiv-daily
+
+# create .env here (ZOTERO_ID, ZOTERO_KEY, SENDER, SENDER_PASSWORD,
+# RECEIVER, OPENAI_API_KEY, OPENAI_API_BASE)
+
+docker compose build
 ```
 
-2. Build the Docker image (recommended for customization):
+> [!NOTE]
+> In some regions you may want to set a registry mirror for `docker pull`
+> (base images) and `HF_ENDPOINT=https://hf-mirror.com` for the Hugging Face
+> model download. Add it under `environment:` in `docker-compose.yml` if needed.
+
+### 2. Run once (manual test)
+
 ```bash
-docker build . -t local/zotero-arxiv-daily:latest
+docker compose run --rm app
+# quick smoke test with 10 papers:
+docker compose run --rm -e DEBUG=true app
 ```
 
-3. Create necessary directories:
+The image is a **one-shot job**: it runs the pipeline, sends the email, and exits.
+
+### 3. Schedule it daily with host cron
+
+arXiv releases each day's batch at ~00:00 UTC (summer) / 01:00 UTC (winter).
+To email the newest papers, run shortly after release, e.g. 01:30 UTC:
+
 ```bash
-mkdir -p logs models
+crontab -e
 ```
 
-4. Edit the `docker-compose.yml` file to configure your environment variables:
-```yaml
-environment:
-    environment:
-      # 必填参数（示例值）
-      - ZOTERO_ID=1234567
-      - ZOTERO_KEY=AbCdEfGhIjKlMnOpQrStUvWx
-      - SMTP_SERVER=smtp.example.com
-      - SMTP_PORT=465
-      - SENDER=your_email@example.com
-      - SENDER_PASSWORD=your_email_password
-      - RECEIVER=receiver_email@example.com
-
-      # 可选参数（带默认值）
-      - ZOTERO_IGNORE=already_read_papers
-      - ARXIV_QUERY=cs.AI+cs.CV+cs.LG+cs.CL
-      - SEND_EMPTY=False
-      - MAX_PAPER_NUM=5
-      - USE_LLM_API=1
-      - OPENAI_API_KEY=sk-your-openai-key-here
-      - OPENAI_API_BASE=https://api.openai.com/v1
-      - MODEL_NAME=Qwen/Qwen1.5-7B-Instruct
-      - LANGUAGE=English
-      
-      # 新增配置
-      - HF_ENDPOINT=https://hf-mirror.com
-      # - TZ=Asia/Shanghai  # 时区设置
-      # - http_proxy=http://proxy.example.com:8080  # HTTP代理（可选）
-      # - https_proxy=http://proxy.example.com:8080 # HTTPS代理（可选）
-      # - no_proxy=localhost,127.0.0.1,.internal  # 代理排除项
+```cron
+# 01:30 UTC daily — adjust the paths to your machine
+30 1 * * * cd /home/user/Codes/zotero-arxiv-daily && /usr/bin/docker compose run --rm app >> logs/cron.log 2>&1
 ```
 
-5. Start the service:
+### Configuration
+
+- **Secrets** come from the `.env` file (`env_file` in `docker-compose.yml`).
+- **Categories / SMTP / model** are in `config/custom.yaml`, baked into the image at build time. Change them and run `docker compose build` again — or mount your own file:
+  ```yaml
+  volumes:
+    - ./config/custom.yaml:/app/config/custom.yaml:ro
+  ```
+- **Parallel LLM speed** is controlled by `executor.llm_concurrency` in `config/base.yaml` (default `8`).
+
+### Model & log persistence
+
+- The embedding model is cached in `./models` (mounted as `HF_HOME`), so it is not re-downloaded on every run.
+- Logs are written to `./logs`.
+
+### Useful commands
+
 ```bash
-docker compose up -d
+docker compose build          # build/rebuild the image
+docker compose run --rm app   # run once
+docker logs <container-id>    # inspect a run's output
 ```
 
-### Key Features of Docker Deployment
+### GPU support
 
-- **Scheduled Execution**: By default runs daily at 8:00 AM (configurable in `command` section)
-- **Log Persistence**: All logs are saved in the `logs/` directory
-- **Model Caching**: Local LLM models can be cached in `models/` directory
-- **Resource Isolation**: Runs in a contained environment with all dependencies included
-- **Easy Updates**: Simply rebuild the image when updating the service
-
-### Configuration Options
-
-You can customize the deployment by:
-
-1. **Changing schedule time**: Edit the cron expression in `command` section (default: `0 8 * * *` means 8:00 AM daily)
-2. **Using local LLM**: Set `USE_LLM_API=0` and uncomment the models volume
-3. **Proxy settings**: Uncomment and configure proxy environment variables if needed
-4. **Timezone**: Uncomment `TZ` variable to set specific timezone (you may also need to comment `- /etc/localtime:/etc/localtime:ro`)
-
-### Monitoring and Maintenance
-
-- View logs:
-```bash
-docker logs zotero-arxiv-daily
-```
-
-- Stop the service:
-```bash
-docker compose down
-```
-
-- Update the service:
-```bash
-git pull origin main
-docker compose down
-docker compose up -d --build
-```
-
-### Why Choose Docker Deployment?
-
-1. **Consistent Environment**: Eliminates "works on my machine" problems
-2. **Resource Control**: Allocate specific CPU/RAM resources as needed
-3. **Isolation**: Runs separately from your host system
-4. **Portability**: Easy to move between different servers
-5. **Persistent Storage**: Logs and models persist between container restarts
+By default the image uses CPU-only torch (small, and more than fast enough —
+the pipeline's bottleneck is the LLM API, not compute). If you ever want GPU
+embeddings, switch `pyproject.toml` to the CUDA torch wheel and use a CUDA base
+image with `--gpus all`.
