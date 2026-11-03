@@ -19,8 +19,22 @@ COPY src ./src
 COPY config ./config
 RUN uv sync --frozen --no-dev
 
+# ---------- supercronic (container-friendly cron) ----------
+# amd64 binary; for arm64 use supercronic-linux-arm64.
+ARG SUPERCRONIC_VERSION=v0.2.29
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL -o /usr/local/bin/supercronic \
+       "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64" \
+    && chmod +x /usr/local/bin/supercronic \
+    && apt-get purge -y curl \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p /app/logs /app/models
 
-# One-shot job: runs the pipeline once and exits.
-# Schedule it with host cron:  docker compose run --rm app
-CMD ["uv", "run", "src/zotero_arxiv_daily/main.py"]
+COPY run.sh entrypoint.sh /app/
+RUN chmod +x /app/run.sh /app/entrypoint.sh
+
+# Persistent scheduler: runs the pipeline daily per CRON_SCHEDULE (UTC).
+# Manual one-shot:  docker compose exec app /app/run.sh
+ENTRYPOINT ["/app/entrypoint.sh"]

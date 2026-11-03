@@ -10,7 +10,12 @@ services:
       - HF_HOME=/app/models
       - TOKENIZERS_PARALLELISM=false
       - TZ=Asia/Shanghai
+      # Daily schedule in UTC (arXiv releases ~00:00-01:00 UTC).
+      - CRON_SCHEDULE=30 1 * * *
+      # Retry when 0 papers are retrieved on a weekday.
+      - RETRY_MINUTES=20
+      - MAX_RETRIES=4
     volumes:
       - ./logs:/app/logs
       - ./models:/app/models
-    restart: "no"
+    restart: unless-stopped
